@@ -3,7 +3,7 @@ import pyaudio
 import struct
 
 try:
-    from secret import PORCUPINE_ACCESS_KEY
+    from secret import PV_KEY
 except ImportError:
     raise ImportError("Missing Porcupine access key in secret.py!")
 
@@ -18,7 +18,7 @@ def main():
     p = pyaudio.PyAudio()
     stream = p.open(format=pyaudio.paInt16, channels=1, rate=SAMPLE_RATE, input=True, frames_per_buffer=CHUNK_SIZE)
 
-    handle = pvporcupine.create(access_key=PORCUPINE_ACCESS_KEY, keyword_paths=['wake/hey_iris.ppn'])
+    handle = pvporcupine.create(access_key=PV_KEY, keyword_paths=['wake/hey_iris.ppn'])
 
     try:
         while True:
