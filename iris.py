@@ -1,5 +1,5 @@
 import struct
-import os
+import subprocess
 import time
 import logging
 import traceback
@@ -104,9 +104,10 @@ def process_audio_stream(porcupine, cobra, stream):
                 silence_timestamp = None
                 frames = []
                 logger.info(f"Keyword {keyword_index} detected, listening for command...")
-                os.system(f"afplay {CONFIG['alert_sounds']['wake']}")
+                subprocess.Popen(["afplay", CONFIG['alert_sounds']['wake']])
                 while True:
                     frame = get_next_audio_frame(stream)
+
                     frame_bytes = struct.pack("h" * len(frame), *frame)
                     frames.append(frame_bytes)
                     is_speech = cobra.process(frame) >= 0.5
@@ -120,9 +121,9 @@ def process_audio_stream(porcupine, cobra, stream):
                         elif time.time() - silence_timestamp > CONFIG['silence_threshold']: # Silence for too long, reset
                             logging.info('Silence detected, saving command to mp3 and resetting...')
                             if save_frames_as_mp3(frames):
-                                os.system(f"afplay {CONFIG['alert_sounds']['success']}")
+                                subprocess.Popen(["afplay", CONFIG['alert_sounds']['success']])
                             else:
-                                os.system(f"afplay {CONFIG['alert_sounds']['fail']}")
+                                subprocess.Popen(["afplay", CONFIG['alert_sounds']['fail']])
                             break
     except KeyboardInterrupt:
         logger.info("Stopping...")
