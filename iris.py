@@ -5,6 +5,7 @@ import logging
 import traceback
 from contextlib import contextmanager
 
+import openai
 import pvporcupine
 import pvcobra
 import pyaudio
@@ -89,6 +90,16 @@ def save_frames_as_mp3(frames, file_path="output.mp3"):
         logger.error(traceback.format_exc())
         return False
 
+def transcribe_audio(file_path="output.mp3"):
+    """Transcribe the audio file using OpenAI."""
+    try:
+        with open(file_path, 'rb') as f:
+            return openai.Audio.transcribe("whisper-1", f)
+    except Exception as e:
+        logger.error("An error occurred while transcribing audio: ")
+        logger.error(traceback.format_exc())
+        return None
+
 def process_audio_stream(porcupine, cobra, stream):
     """Main loop to process audio stream, detect wake word, and record command."""
     frames = []
@@ -115,13 +126,13 @@ def process_audio_stream(porcupine, cobra, stream):
                     if is_speech:
                         silence_timestamp = None # Speech detected, reset silence_timestamp
                     else:
-
                         if silence_timestamp is None: # First silence frame
                             silence_timestamp = time.time()
                         elif time.time() - silence_timestamp > CONFIG['silence_threshold']: # Silence for too long, reset
                             logging.info('Silence detected, saving command to mp3 and resetting...')
                             if save_frames_as_mp3(frames):
                                 subprocess.Popen(["afplay", CONFIG['alert_sounds']['success']])
+                                print(transcribe_audio())
                             else:
                                 subprocess.Popen(["afplay", CONFIG['alert_sounds']['fail']])
                             break
@@ -132,6 +143,7 @@ def main():
     p = pyaudio.PyAudio()
 
     try:
+        openai.api_key = OPENAI_KEY
         porcupine, cobra = init_picovoice_modules(PV_KEY)
         with audio_stream(p) as stream:
             process_audio_stream(porcupine, cobra, stream)
