@@ -115,28 +115,46 @@ def transcribe_audio(file_path="output.mp3"):
         return None
 
 def get_api_request_via_completion(message):
-    home_assistant_function = {
-        "name": "make_hass_request",
-        "description": "Make a Home Assistant API request",
+    post_request_function = {
+        "name": "post",
+        "description": "Make a POST request to the Home Assistant REST API",
         "parameters": {
             "type": "object",
             "properties": {
-                "method": {
-                    "type": "string",
-                    "description": "HTTP method to be used for the request",
-                    "example": "GET",
-                    "enum": ["GET", "POST"]
-                },
                 "endpoint": {
                     "type": "string",
-                    "description": "API endpoint for the Home Assistant service, excluding the /api/ prefix",
+                    "description": "API endpoint to which the request will be sent, excluding the /api/ prefix",
                     "example": "services/light/turn_on"
                 },
                 "body": {
                     "type": "string",
-                    "description": "Optional body content for POST requests",
-                    "example": "{\"entity_id\": \"all\"}",
-                    "optional": True
+                    "description": "Body data to be sent with the request, never to be left empty ",
+                    "example": "{\"entity_id\": \"all\"}"
+                }
+            },
+            "required": ["method", "endpoint", "body"]
+        },
+        "response": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string",
+                    "description": "Response returned by the API",
+                    "example": "{\n  \"latitude\": 0.00000000000000,\n  \"longitude\": 0.00000000000000,\n  \"elevation\": 0,\n  \"unit_system\": {\n    \"length\": \"mi\",\n    \"accumulated_precipitation\": \"in\",\n    \"mass\": \"lb\",\n    \"pressure\": \"psi\",\n    \"temperature\": \"°F\",\n    \"volume\": \"gal\",\n    \"wind_speed\": \"mph\"\n  },\n  \"location_name\": \"1600 Pennsylvania Avenue\",\n  \"time_zone\": \"America\/New_York\",\n  \"components\": [\n    \"hue\",\n    \"api\",\n    \"zone\",\n    \"button\",\n    \"fan\",\n    \"homekit\",\n    \"media_player\",\n    \"switch\",\n    \"weather\",\n    \"history\",\n    \"sensor\",\n    \"camera\",\n    \"scene\",\n    \"switch.mqtt\",\n    \"light.hue\",\n    \"sensor.energy\",\n  ],\n  \"config_dir\": \"\/config\",\n  \"whitelist_external_dirs\": [\n    \"\/media\",\n    \"\/config\/www\"\n  ],\n  \"allowlist_external_dirs\": [\n    \"\/media\",\n    \"\/config\/www\"\n  ],\n  \"allowlist_external_urls\": [],\n  \"version\": \"2023.8.4\",\n  \"config_source\": \"storage\",\n  \"safe_mode\": false,\n  \"state\": \"RUNNING\",\n  \"external_url\": null,\n  \"internal_url\": null,\n  \"currency\": \"USD\",\n  \"country\": \"US\",\n  \"language\": \"en\"\n}"
+                }
+            }
+        }
+    }
+    get_request_function = {
+        "name": "get",
+        "description": "Make a GET request to the Home Assistant REST API",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "endpoint": {
+                    "type": "string",
+                    "description": "API endpoint to which the request will be sent, excluding the /api/ prefix",
+                    "example": "states"
                 }
             },
             "required": ["method", "endpoint"]
@@ -146,8 +164,8 @@ def get_api_request_via_completion(message):
             "properties": {
                 "message": {
                     "type": "string",
-                    "description": "Response message returned by the API",
-                    "example": "{\n  \"latitude\": 0.00000000000000,\n  \"longitude\": 0.00000000000000,\n  \"elevation\": 0,\n  \"unit_system\": {\n    \"length\": \"mi\",\n    \"accumulated_precipitation\": \"in\",\n    \"mass\": \"lb\",\n    \"pressure\": \"psi\",\n    \"temperature\": \"°F\",\n    \"volume\": \"gal\",\n    \"wind_speed\": \"mph\"\n  },\n  \"location_name\": \"1600 Pennsylvania Avenue\",\n  \"time_zone\": \"America\/New_York\",\n  \"components\": [\n    \"hue\",\n    \"api\",\n    \"zone\",\n    \"button\",\n    \"fan\",\n    \"homekit\",\n    \"media_player\",\n    \"switch\",\n    \"weather\",\n    \"history\",\n    \"sensor\",\n    \"camera\",\n    \"scene\",\n    \"switch.mqtt\",\n    \"light.hue\",\n    \"sensor.energy\",\n  ],\n  \"config_dir\": \"\/config\",\n  \"whitelist_external_dirs\": [\n    \"\/media\",\n    \"\/config\/www\"\n  ],\n  \"allowlist_external_dirs\": [\n    \"\/media\",\n    \"\/config\/www\"\n  ],\n  \"allowlist_external_urls\": [],\n  \"version\": \"2023.8.4\",\n  \"config_source\": \"storage\",\n  \"safe_mode\": false,\n  \"state\": \"RUNNING\",\n  \"external_url\": null,\n  \"internal_url\": null,\n  \"currency\": \"USD\",\n  \"country\": \"US\",\n  \"language\": \"en\"\n}"
+                    "description": "Response returned by the API",
+                    "example": "[\n    {\n        \"attributes\": {},\n        \"entity_id\": \"sun.sun\",\n        \"last_changed\": \"2016-05-30T21:43:32.418320+00:00\",\n        \"state\": \"below_horizon\"\n    },\n    {\n        \"attributes\": {},\n        \"entity_id\": \"process.Dropbox\",\n        \"last_changed\": \"22016-05-30T21:43:32.418320+00:00\",\n        \"state\": \"on\"\n    }\n]"
                 }
             }
         }
@@ -155,7 +173,7 @@ def get_api_request_via_completion(message):
     msg_log = [
         {
             "role": "system",
-            "content": "You are an AI assistant capable of managing home devices through the Home Assistant API. Users will give commands in plain English, which you'll execute using the API. Adapt if errors occur and explain persistent issues to the user without making duplicate requests. Note that most POST requests require a body. Never make the same request more than once. Infer when you've completed a task or when more information is needed, and respond with '[DONE]' at the end in order to secede control back to the user. For example: 'I've turned on the lights [DONE]' or 'Which lights would you like to turn on? [DONE]'"
+            "content": "You are an AI assistant capable of managing home devices through the Home Assistant API. Users will give commands in plain English, which you'll execute via API function calls. The API will reply to you with its response. Adapt if errors occur and explain persistent issues to the user without making duplicate requests. IMPORTANT: Never under any circumstances include an empty request body when making a POST request. Generally, HTTP 400 errors indicate you've malformed your request body, and HTTP 404 errors indicate you've malformed your request endpoint. Never make the same request more than once. When modifying entity states, the API will respond with entities that have been modified. For example: '[]' means that the request was successful and no entity states were changed. Infer when you've completed a task or when more information is needed, and respond with '[DONE]' at the end in order to secede control back to the user. For example: 'I've turned on the lights [DONE]' or 'Which lights would you like to turn on? [DONE]'"
         },
         {
             "role": "user",
@@ -168,10 +186,9 @@ def get_api_request_via_completion(message):
             model="gpt-4",
             messages=msg_log,
             temperature=0.25,
-            functions=[home_assistant_function]
+            functions=[post_request_function, get_request_function]
         )
         spinner.succeed("Response received from GPT-4")
-
         response = completion.choices[0].message.content
         if response:
             if response.endswith("[DONE]"):
@@ -181,13 +198,14 @@ def get_api_request_via_completion(message):
             print(response)
             msg_log.append({"role": "assistant", "content": f"({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}): {response}"})
         else:
-            call = json.loads(completion.choices[0].message.function_call.arguments)
-            if 'body' in call:
-                logging.info(f"Making {call['method']} request to {call['endpoint']} with message body: {call['body']}")
-                msg_log.append({"role": "user", "content": f"\nAPI RESPONSE ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}): {make_hass_request(call['method'], call['endpoint'], call['body'])}"})
-            else:
-                logging.info(f"Making {call['method']} request to {call['endpoint']}")
-                msg_log.append({"role": "user", "content": f"\nAPI RESPONSE ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}): {make_hass_request(call['method'], call['endpoint'])}"})
+            call = completion.choices[0].message.function_call
+            call.arguments = json.loads(call.arguments)
+            if call.name == "post":
+                logging.info(f"Making POST request to {call.arguments['endpoint']} with message body: {call.arguments['body']}")
+                msg_log.append({"role": "user", "content": f"\nAPI RESPONSE ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}): {make_hass_request('POST', call.arguments['endpoint'], call.arguments['body'])}"})
+            elif call.name == "get":
+                logging.info(f"Making GET request to {call.arguments['endpoint']}")
+                msg_log.append({"role": "user", "content": f"\nAPI RESPONSE ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}): {make_hass_request('GET', call.arguments['endpoint'])}"})
 
 def make_hass_request(method, endpoint='', body=None):
     """Make a request to Home Assistant."""
