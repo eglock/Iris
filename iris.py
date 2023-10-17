@@ -13,6 +13,7 @@ import pvporcupine
 import pvcobra
 import pyaudio
 from pydub import AudioSegment
+from halo import Halo
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
@@ -99,7 +100,8 @@ def transcribe_audio(file_path="output.mp3"):
     """Transcribe the audio file using OpenAI."""
     try:
         with open(file_path, 'rb') as f:
-            response = openai.Audio.transcribe("whisper-1", f)
+            with Halo(text='Waiting for response from Whisper', spinner='dots'):
+                response = openai.Audio.transcribe("whisper-1", f)
             return response.text
     except Exception as e:
         logger.error("An error occurred while transcribing audio: ")
@@ -144,37 +146,41 @@ def get_api_request_via_completion(message):
             }
         }
     }
-    message = f"USER SAYS ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}): {message}"
+    msg_log = [
+        {
+            "role": "system",
+            "content": "You are an AI assistant capable of managing home devices through the Home Assistant API. Users will give commands in plain English, which you'll execute using the API. Adapt if errors occur and explain persistent issues to the user without making duplicate requests. Note that most POST requests require a body. Never make the same request more than once. Infer when you've completed a task or when more information is needed, and respond with '[DONE]' at the end in order to secede control back to the user. For example: 'I've turned on the lights [DONE]' or 'Which lights would you like to turn on? [DONE]'"
+        },
+        {
+            "role": "user",
+            "content": message
+        }
+    ]
     while True:
-        completion = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {
-                    "role": "user",
-                    "content": f"INSTRUCTIONS: You are an AI assistant capable of managing home devices through the Home Assistant API. Users will give commands in plain English, which you'll execute using the API. Adapt if errors occur and explain persistent issues to the user without making duplicate requests. Note that most POST requests require a body. Never make the same request more than once. Infer when you've completed a task or when more information is needed, and respond with '[DONE]' at the end in order to secede control back to the user. For example: 'I've turned on the lights [DONE]' or 'Which lights would you like to turn on? [DONE]\n{message}"
-                }
-            ],
-            temperature=0.5,
-            functions=[home_assistant_function]
-        )
+        with Halo(text='Waiting for response from GPT-4', spinner='dots'):
+            completion = openai.ChatCompletion.create(
+                model="gpt-4",
+                messages=msg_log,
+                temperature=0.25,
+                functions=[home_assistant_function]
+            )
 
         response = completion.choices[0].message.content
         if response:
             if response.endswith("[DONE]"):
                 print(response[:-6])
                 # Allow the user to respond
-
                 break
             print(response)
-            message += f"\nYOUR RESPONSE ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}): {response}"
+            msg_log.append({"role": "assistant", "content": f"({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}): {response}"})
         else:
             call = json.loads(completion.choices[0].message.function_call.arguments)
             if 'body' in call:
                 logging.info(f"Making {call['method']} request to {call['endpoint']} with message body: {call['body']}")
-                message += f"\nAPI RESPONSE ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}): {make_hass_request(call['method'], call['endpoint'], call['body'])}"
+                msg_log.append({"role": "user", "content": f"\nAPI RESPONSE ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}): {make_hass_request(call['method'], call['endpoint'], call['body'])}"})
             else:
                 logging.info(f"Making {call['method']} request to {call['endpoint']}")
-                message += f"\nAPI RESPONSE ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}): {make_hass_request(call['method'], call['endpoint'])}"
+                msg_log.append({"role": "user", "content": f"\nAPI RESPONSE ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')}): {make_hass_request(call['method'], call['endpoint'])}"})
 
 def make_hass_request(method, endpoint='', body=None):
     """Make a request to Home Assistant."""
@@ -211,37 +217,39 @@ def process_audio_stream(porcupine, cobra, stream):
     wake_timestamp = None
 
     try:
+        spinner = Halo(text='Waiting for wake word', spinner='dots')
+        spinner.start()
         while True:
             frame = get_next_audio_frame(stream)
             keyword_index = porcupine.process(frame)
 
             if keyword_index >= 0:
-                wake_timestamp = time.time()
-                silence_timestamp = None
-                frames = []
-                logger.info(f"Keyword {keyword_index} detected, listening for command...")
-                subprocess.Popen(["afplay", CONFIG['alert_sounds']['wake']])
-                while True:
-                    frame = get_next_audio_frame(stream)
+                spinner.stop()
+                with Halo(text='Listening', spinner='dots'):
+                    wake_timestamp = time.time()
+                    silence_timestamp = None
+                    frames = []
+                    subprocess.Popen(["afplay", CONFIG['alert_sounds']['wake']])
+                    while True:
+                        frame = get_next_audio_frame(stream)
 
-                    frame_bytes = struct.pack("h" * len(frame), *frame)
-                    frames.append(frame_bytes)
-                    is_speech = cobra.process(frame) >= 0.5
+                        frame_bytes = struct.pack("h" * len(frame), *frame)
+                        frames.append(frame_bytes)
+                        is_speech = cobra.process(frame) >= 0.5
 
-                    if is_speech:
-                        silence_timestamp = None # Speech detected, reset silence_timestamp
-                    else:
-                        if silence_timestamp is None: # First silence frame
-                            silence_timestamp = time.time()
-                        elif time.time() - silence_timestamp > CONFIG['silence_threshold']: # Silence for too long, reset
-                            logging.info('Silence detected, saving command to mp3 and resetting...')
-                            if save_frames_as_mp3(frames):
-                                subprocess.Popen(["afplay", CONFIG['alert_sounds']['success']])
-                                return True
-                            else:
-                                subprocess.Popen(["afplay", CONFIG['alert_sounds']['fail']])
-                                return False
-                            break
+                        if is_speech:
+                            silence_timestamp = None # Speech detected, reset silence_timestamp
+                        else:
+                            if silence_timestamp is None: # First silence frame
+                                silence_timestamp = time.time()
+                            elif time.time() - silence_timestamp > CONFIG['silence_threshold']: # Silence for too long, reset
+                                if save_frames_as_mp3(frames):
+                                    subprocess.Popen(["afplay", CONFIG['alert_sounds']['success']])
+                                    return True
+                                else:
+                                    subprocess.Popen(["afplay", CONFIG['alert_sounds']['fail']])
+                                    return False
+                                break
     except KeyboardInterrupt:
         logger.info("Stopping...")
 
