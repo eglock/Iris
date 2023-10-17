@@ -182,13 +182,28 @@ def get_api_request_via_completion(message):
     ]
     while True:
         spinner.start('Waiting for response from GPT-4')
-        completion = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=msg_log,
-            temperature=0.25,
-            functions=[post_request_function, get_request_function]
-        )
+
+        attempts = 0
+        while attempts < 3:
+            try:
+                attempts += 1
+                completion = openai.ChatCompletion.create(
+                    model="gpt-4",
+                    messages=msg_log,
+                    temperature=0.25,
+                    functions=[post_request_function, get_request_function]
+                )
+                break
+
+            except openai.error.RateLimitError:
+                spinner.warn("Rate limit exceeded, trying again in 5 seconds")
+                time.sleep(5)
+
+        else:
+            spinner.fail("Rate limit exceeded, exiting")
+
         spinner.succeed("Response received from GPT-4")
+
         response = completion.choices[0].message.content
         if response:
             if response.endswith("[DONE]"):
@@ -228,7 +243,10 @@ def make_hass_request(method, endpoint='', body=None):
                 },
                 data=body
             )
-        logging.info(f"Response: {response.text}")
+        if len(response.text) > 200:
+            print(f"API Response: {response.text[:200]}...")
+        else:
+            print(f"API Response: {response.text}")
         return response.text
     except Exception as e:
         logger.error("An error occurred while making a request to Home Assistant: ")
@@ -292,7 +310,7 @@ def main():
             if processed:
                 transcription = transcribe_audio()
                 if transcription:
-                    print(f"User: {transcription}")
+                    print(f"USER: {transcription}")
                     get_api_request_via_completion(transcription)
                 else:
                     break
