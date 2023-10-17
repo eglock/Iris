@@ -18,6 +18,8 @@ from halo import Halo
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
+spinner = Halo(spinner='dots')
+
 CONFIG = {
     'chunk_size': 512,
     'sample_rate': 16000,
@@ -100,9 +102,13 @@ def transcribe_audio(file_path="output.mp3"):
     """Transcribe the audio file using OpenAI."""
     try:
         with open(file_path, 'rb') as f:
-            with Halo(text='Waiting for response from Whisper', spinner='dots'):
-                response = openai.Audio.transcribe("whisper-1", f)
+            spinner.start('Waiting for response from Whisper')
+            response = openai.Audio.transcribe("whisper-1", f)
+            spinner.succeed("Response received from Whisper")
             return response.text
+    except KeyboardInterrupt:
+        spinner.fail("Keyboard interrupt")
+        return None
     except Exception as e:
         logger.error("An error occurred while transcribing audio: ")
         logger.error(traceback.format_exc())
@@ -157,13 +163,14 @@ def get_api_request_via_completion(message):
         }
     ]
     while True:
-        with Halo(text='Waiting for response from GPT-4', spinner='dots'):
-            completion = openai.ChatCompletion.create(
-                model="gpt-4",
-                messages=msg_log,
-                temperature=0.25,
-                functions=[home_assistant_function]
-            )
+        spinner.start('Waiting for response from GPT-4')
+        completion = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=msg_log,
+            temperature=0.25,
+            functions=[home_assistant_function]
+        )
+        spinner.succeed("Response received from GPT-4")
 
         response = completion.choices[0].message.content
         if response:
@@ -217,41 +224,43 @@ def process_audio_stream(porcupine, cobra, stream):
     wake_timestamp = None
 
     try:
-        spinner = Halo(text='Waiting for wake word', spinner='dots')
-        spinner.start()
+        spinner.start("Waiting for wake word")
         while True:
             frame = get_next_audio_frame(stream)
             keyword_index = porcupine.process(frame)
 
             if keyword_index >= 0:
-                spinner.stop()
-                with Halo(text='Listening', spinner='dots'):
-                    wake_timestamp = time.time()
-                    silence_timestamp = None
-                    frames = []
-                    subprocess.Popen(["afplay", CONFIG['alert_sounds']['wake']])
-                    while True:
-                        frame = get_next_audio_frame(stream)
+                spinner.succeed("Wake word detected!")
+                spinner.start("Listening")
+                wake_timestamp = time.time()
+                silence_timestamp = None
+                frames = []
+                subprocess.Popen(["afplay", CONFIG['alert_sounds']['wake']])
+                while True:
+                    frame = get_next_audio_frame(stream)
 
-                        frame_bytes = struct.pack("h" * len(frame), *frame)
-                        frames.append(frame_bytes)
-                        is_speech = cobra.process(frame) >= 0.5
+                    frame_bytes = struct.pack("h" * len(frame), *frame)
+                    frames.append(frame_bytes)
+                    is_speech = cobra.process(frame) >= 0.5
 
-                        if is_speech:
-                            silence_timestamp = None # Speech detected, reset silence_timestamp
-                        else:
-                            if silence_timestamp is None: # First silence frame
-                                silence_timestamp = time.time()
-                            elif time.time() - silence_timestamp > CONFIG['silence_threshold']: # Silence for too long, reset
-                                if save_frames_as_mp3(frames):
-                                    subprocess.Popen(["afplay", CONFIG['alert_sounds']['success']])
-                                    return True
-                                else:
-                                    subprocess.Popen(["afplay", CONFIG['alert_sounds']['fail']])
-                                    return False
-                                break
+                    if is_speech:
+                        silence_timestamp = None # Speech detected, reset silence_timestamp
+                    else:
+                        if silence_timestamp is None: # First silence frame
+                            silence_timestamp = time.time()
+                        elif time.time() - silence_timestamp > CONFIG['silence_threshold']: # Silence for too long, reset
+                            if save_frames_as_mp3(frames):
+                                spinner.succeed("Finished listening")
+                                subprocess.Popen(["afplay", CONFIG['alert_sounds']['success']])
+                                return True
+                            else:
+                                spinner.fail("Failed to save audio")
+                                subprocess.Popen(["afplay", CONFIG['alert_sounds']['fail']])
+                                return False
+                            break
     except KeyboardInterrupt:
-        logger.info("Stopping...")
+        spinner.fail("Keyboard interrupt")
+        return False
 
 def main():
     p = pyaudio.PyAudio()
@@ -264,8 +273,13 @@ def main():
                 processed = process_audio_stream(porcupine, cobra, stream)
             if processed:
                 transcription = transcribe_audio()
-                print(f"User: {transcription}")
-                get_api_request_via_completion(transcription)
+                if transcription:
+                    print(f"User: {transcription}")
+                    get_api_request_via_completion(transcription)
+                else:
+                    break
+            else:
+                break
     except Exception as e:
         logger.error("An error occurred: ")
         logger.error(traceback.format_exc())
