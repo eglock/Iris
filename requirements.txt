@@ -1,3 +1,5 @@
+openai
 pvporcupine
 pvcobra
 pyaudio
+halo
