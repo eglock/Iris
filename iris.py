@@ -3,6 +3,7 @@ import subprocess
 import time
 import logging
 import traceback
+import json
 from contextlib import contextmanager
 
 import openai
@@ -94,11 +95,16 @@ def transcribe_audio(file_path="output.mp3"):
     """Transcribe the audio file using OpenAI."""
     try:
         with open(file_path, 'rb') as f:
-            return openai.Audio.transcribe("whisper-1", f)
+            response = openai.Audio.transcribe("whisper-1", f)
+            return response.text
     except Exception as e:
         logger.error("An error occurred while transcribing audio: ")
         logger.error(traceback.format_exc())
         return None
+
+def get_api_request_via_completion(content):
+    completion = openai.ChatCompletion.create(model="gpt-3.5-turbo", messages=[{"role": "user", "content": content}])
+    return completion.choices[0].message.content
 
 def process_audio_stream(porcupine, cobra, stream):
     """Main loop to process audio stream, detect wake word, and record command."""
@@ -132,7 +138,7 @@ def process_audio_stream(porcupine, cobra, stream):
                             logging.info('Silence detected, saving command to mp3 and resetting...')
                             if save_frames_as_mp3(frames):
                                 subprocess.Popen(["afplay", CONFIG['alert_sounds']['success']])
-                                print(transcribe_audio())
+                                return transcribe_audio()
                             else:
                                 subprocess.Popen(["afplay", CONFIG['alert_sounds']['fail']])
                             break
@@ -146,7 +152,9 @@ def main():
         openai.api_key = OPENAI_KEY
         porcupine, cobra = init_picovoice_modules(PV_KEY)
         with audio_stream(p) as stream:
-            process_audio_stream(porcupine, cobra, stream)
+            transcription = process_audio_stream(porcupine, cobra, stream)
+            api_request = get_api_request_via_completion(transcription)
+            print(api_request)
     except Exception as e:
         logger.error("An error occurred: ")
         logger.error(traceback.format_exc())
