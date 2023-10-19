@@ -2,4 +2,5 @@ openai
 pvporcupine
 pvcobra
 pyaudio
+pydub
 halo
